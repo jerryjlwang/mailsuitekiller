@@ -1,91 +1,96 @@
-// ISOLATED-world collector (spike-only).
+// ISOLATED-world collector + badger.
 //
-// Correlates the MAIN-world interceptor's reports with open state (URL hash)
-// and prints an UNAMBIGUOUS verdict: were message bodies WITH images (real
-// email HTML, imgs>0) seen BEFORE any message was opened? Large imageless
-// metadata blobs are tracked separately so they can't inflate the count.
+// Receives compact verdicts from the MAIN-world capture, persists them in the
+// verdict cache (so re-renders and reloads don't rescan), and badges inbox
+// rows before they're opened. Rows are joined to verdicts via their
+// data-legacy-last-message-id (confirmed against live Gmail). Idempotent and
+// re-run on Gmail's virtual-scroll re-renders via a MutationObserver.
+import { VerdictCache } from "../cache/verdictCache";
+import { detectFeed } from "./parseFeed";
+import type { Verdict } from "../engine";
+import { ensureBadgeStyles, renderBadge, BADGE_CLASS, BADGED_ATTR } from "../ui/badge";
 
-const TAG = "[MSK-spike]";
-const startedAt = performance.now();
+const ROW_ID_ATTR = "data-legacy-last-message-id";
 
-// Gmail list views have a short hash (#inbox, #search/foo). Opening a thread
-// appends a long id token (#inbox/FMfcgz…, #search/query/FMfcgz…). The trailing
-// token is base64-ish [A-Za-z0-9_-]{12,}; search *list* views end in the query
-// (contains %/@/.) and correctly don't match.
-function isMessageOpen(): boolean {
-  const parts = location.hash.replace(/^#/, "").split("/").filter(Boolean);
-  const last = parts[parts.length - 1] ?? "";
-  return parts.length >= 2 && /^[A-Za-z0-9_-]{12,}$/.test(last);
-}
+const cache = new VerdictCache();
+const mem = new Map<string, Verdict>(); // fast synchronous lookup during a pass
+const hydrated = new Set<string>(); // ids already looked up in storage
 
-let firstOpenAt: number | null = null;
-// image-bearing body payloads (the ones that matter)
-let bodyBefore = 0;
-let bodyAfter = 0;
-let maxImgsBefore = 0;
-const bodyEndpointsBefore = new Set<string>();
-// imageless data blobs (metadata / thread lists) — tracked, not counted as body
-let blobBefore = 0;
-let blobAfter = 0;
-
-function endpointOf(url: string): string {
-  return url.match(/\/(i\/[a-z]+)\b/)?.[1] ?? url.split("?")[0].slice(-24);
-}
-
-function checkOpen(): void {
-  if (firstOpenAt === null && isMessageOpen()) {
-    firstOpenAt = Math.round(performance.now() - startedAt);
-    console.log(
-      `${TAG} first message-open detected at ~${firstOpenAt}ms (hash=${location.hash})`,
-    );
-  }
-}
-window.addEventListener("hashchange", checkOpen);
-checkOpen();
-
-interface SpikeReport {
-  source: "MSK_SPIKE";
-  url: string;
-  bytes: number;
-  imgs: number;
-  t: number;
-}
-
+// The MAIN-world capture posts raw /i/fd feed text; parsing + detection run
+// here (the ISOLATED world, where module imports are reliable).
 window.addEventListener("message", (e: MessageEvent) => {
-  const d = e.data as Partial<SpikeReport> | null;
-  if (!d || d.source !== "MSK_SPIKE") return;
-  const before = firstOpenAt === null;
-  const ep = endpointOf(String(d.url));
-  const imgs = d.imgs ?? 0;
-
-  if (imgs > 0) {
-    if (before) {
-      bodyBefore++;
-      maxImgsBefore = Math.max(maxImgsBefore, imgs);
-      bodyEndpointsBefore.add(ep);
-    } else {
-      bodyAfter++;
-    }
-    console.log(
-      `${TAG} IMG-BEARING BODY imgs=${imgs} bytes=${d.bytes} endpoint=${ep} t=${d.t}ms ` +
-        `${before ? "BEFORE any open ✅" : "after open ⏱"}`,
-    );
-  } else {
-    before ? blobBefore++ : blobAfter++;
+  const d = e.data as { source?: string; kind?: string; raw?: string } | null;
+  if (!d || d.source !== "MSK" || d.kind !== "feed" || typeof d.raw !== "string") return;
+  let verdicts: Map<string, Verdict>;
+  try {
+    verdicts = detectFeed(d.raw);
+  } catch {
+    return;
   }
+  if (verdicts.size === 0) return;
+  for (const [id, v] of verdicts) mem.set(id, v);
+  cache.setMany(verdicts).catch(() => {});
+  scheduleBadgePass();
 });
 
-setInterval(() => {
-  if (bodyBefore + bodyAfter + blobBefore + blobAfter === 0) return;
-  const verdict = bodyBefore > 0 ? "BODY PREFETCH CONFIRMED ✅" : "bodies only on open ❌";
-  console.log(
-    `${TAG} VERDICT — bodies-with-images BEFORE open: ${bodyBefore} ` +
-      `(max imgs=${maxImgsBefore}, endpoints=[${[...bodyEndpointsBefore].join(",")}]); ` +
-      `after open: ${bodyAfter}. imageless data blobs before/after: ${blobBefore}/${blobAfter}. ` +
-      `=> ${verdict}`,
-  );
-}, 5000);
+let scheduled = false;
+function scheduleBadgePass(): void {
+  if (scheduled) return;
+  scheduled = true;
+  requestAnimationFrame(() => {
+    scheduled = false;
+    void badgePass();
+  });
+}
 
-console.log(
-  `${TAG} collector ready. Sit on the inbox a few seconds (scroll a little), then open a tracked email. Read the VERDICT line.`,
-);
+async function badgePass(): Promise<void> {
+  ensureBadgeStyles();
+  const rows = document.querySelectorAll(`[${ROW_ID_ATTR}]`);
+  const missing: string[] = [];
+
+  for (const row of rows) {
+    const id = row.getAttribute(ROW_ID_ATTR);
+    if (!id) continue;
+    const v = mem.get(id);
+    if (v) applyBadge(row, v);
+    else if (!hydrated.has(id)) missing.push(id);
+  }
+
+  if (missing.length === 0) return;
+  missing.forEach((id) => hydrated.add(id));
+  const fromCache = await cache.getMany(missing);
+  if (fromCache.size === 0) return;
+  for (const [id, v] of fromCache) mem.set(id, v);
+  for (const row of document.querySelectorAll(`[${ROW_ID_ATTR}]`)) {
+    const id = row.getAttribute(ROW_ID_ATTR);
+    const v = id ? mem.get(id) : undefined;
+    if (v) applyBadge(row, v);
+  }
+}
+
+function applyBadge(row: Element, verdict: Verdict): void {
+  if (!verdict.tracked) return;
+  const container = row.closest("tr") ?? row;
+  if (container.getAttribute(BADGED_ATTR) === "1" || container.querySelector(`.${BADGE_CLASS}`)) {
+    return; // idempotent
+  }
+  const badge = renderBadge(verdict);
+  if (!badge) return;
+  container.setAttribute(BADGED_ATTR, "1");
+  // First-pass placement: prepend into the row. Visual placement will be
+  // refined against live Gmail (see docs/SPIKE.md notes).
+  container.prepend(badge);
+}
+
+function start(): void {
+  new MutationObserver(() => scheduleBadgePass()).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
+  scheduleBadgePass();
+}
+
+if (document.body) start();
+else document.addEventListener("DOMContentLoaded", start);
+
+console.log("[MSK] collector ready");
