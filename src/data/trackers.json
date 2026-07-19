@@ -1,0 +1,70 @@
+{
+  "version": 1,
+  "signatures": [
+    {
+      "name": "Mailsuite",
+      "category": "personal",
+      "patterns": ["mailtrack.io", "mailsuite.com"]
+    },
+    {
+      "name": "Yesware",
+      "category": "personal",
+      "patterns": ["yesware.com"]
+    },
+    {
+      "name": "Streak",
+      "category": "personal",
+      "patterns": ["mailfoogae.appspot.com", "streak.com"]
+    },
+    {
+      "name": "HubSpot",
+      "category": "personal",
+      "patterns": ["track.hubspot.com", "t.hubspotemail.net", "hubspotlinks.com"]
+    },
+    {
+      "name": "Mixmax",
+      "category": "personal",
+      "patterns": ["mixmax.com"]
+    },
+    {
+      "name": "Salesloft",
+      "category": "personal",
+      "patterns": ["salesloft.com"]
+    },
+    {
+      "name": "Outreach",
+      "category": "personal",
+      "patterns": ["outreach.io"]
+    },
+    {
+      "name": "Boomerang",
+      "category": "personal",
+      "patterns": ["boomeranggmail.com", "baydin.com"]
+    },
+    {
+      "name": "Gmelius",
+      "category": "personal",
+      "patterns": ["gmelius.com", "gmelius.io"]
+    },
+    {
+      "name": "Superhuman",
+      "category": "personal",
+      "patterns": ["superhuman.com"]
+    },
+    {
+      "name": "Mailchimp",
+      "category": "bulk",
+      "patterns": ["list-manage.com", "mailchi.mp", "mailchimpapp.net"]
+    },
+    {
+      "name": "SendGrid",
+      "category": "bulk",
+      "patterns": ["sendgrid.net", "sendgrid.com"]
+    },
+    {
+      "name": "Constant Contact",
+      "category": "bulk",
+      "patterns": ["rs6.net", "constantcontact.com"]
+    }
+  ]
+}
