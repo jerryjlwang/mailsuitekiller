@@ -9,9 +9,13 @@ export default defineManifest({
   manifest_version: 3,
   name: "MailSuiteKiller (spike)",
   version: "0.0.1",
-  description:
-    "Detects email tracking pixels in Gmail. Prefetch-feasibility spike build.",
+  description: "Detects email tracking pixels in Gmail and warns before you open a tracked email.",
+  permissions: ["storage"],
   host_permissions: ["https://mail.google.com/*"],
+  action: {
+    default_popup: "src/popup/popup.html",
+    default_title: "MailSuiteKiller",
+  },
   content_scripts: [
     {
       matches: ["https://mail.google.com/*"],

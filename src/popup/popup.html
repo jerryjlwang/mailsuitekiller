@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MailSuiteKiller</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #202124;
+        --muted: #5f6368;
+        --line: #e8eaed;
+        --personal: #c5221f;
+        --bulk: #5f6368;
+        --unknown: #b06000;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #202124;
+          --fg: #e8eaed;
+          --muted: #9aa0a6;
+          --line: #3c4043;
+          --personal: #f6aea9;
+          --bulk: #bdc1c6;
+          --unknown: #fdd663;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        width: 260px;
+        margin: 0;
+        padding: 14px 16px;
+        font: 13px/1.5 Roboto, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      h1 { font-size: 14px; margin: 0 0 2px; }
+      .sub { color: var(--muted); font-size: 11px; margin-bottom: 12px; }
+      .big { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+      .big .n { font-size: 30px; font-weight: 700; line-height: 1; }
+      .big .lbl { color: var(--muted); font-size: 12px; }
+      .row { display: flex; justify-content: space-between; padding: 5px 0; border-top: 1px solid var(--line); }
+      .row .k { color: var(--muted); }
+      .k.personal { color: var(--personal); }
+      .k.bulk { color: var(--bulk); }
+      .k.unknown { color: var(--unknown); }
+      .foot { margin-top: 12px; color: var(--muted); font-size: 10px; }
+    </style>
+  </head>
+  <body>
+    <h1>MailSuiteKiller</h1>
+    <div class="sub">tracking pixels, detected locally</div>
+
+    <div class="big"><span class="n" id="inview">–</span><span class="lbl">tracked in current view</span></div>
+
+    <div class="row"><span class="k">Total tracked seen</span><span id="total">–</span></div>
+    <div class="row"><span class="k personal">Personal trackers</span><span id="personal">–</span></div>
+    <div class="row"><span class="k bulk">Bulk / ESP</span><span id="bulk">–</span></div>
+    <div class="row"><span class="k unknown">Suspected</span><span id="unknown">–</span></div>
+
+    <div class="foot" id="foot">No external requests. No analytics.</div>
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

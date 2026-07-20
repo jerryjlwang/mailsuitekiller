@@ -9,8 +9,11 @@ import { VerdictCache } from "../cache/verdictCache";
 import { detectFeed } from "./parseFeed";
 import type { Verdict } from "../engine";
 import { ensureBadgeStyles, renderBadge, BADGE_CLASS, BADGED_ATTR } from "../ui/badge";
+import { ensureBannerStyles, renderBanner, BANNER_CLASS, BANNERED_ATTR } from "../ui/banner";
+import { normalizeToHex } from "./ids";
 
 const ROW_ID_ATTR = "data-legacy-last-message-id";
+const STATS_KEY = "msk:stats";
 
 const cache = new VerdictCache();
 const mem = new Map<string, Verdict>(); // fast synchronous lookup during a pass
@@ -30,16 +33,18 @@ window.addEventListener("message", (e: MessageEvent) => {
   if (verdicts.size === 0) return;
   for (const [id, v] of verdicts) mem.set(id, v);
   cache.setMany(verdicts).catch(() => {});
-  scheduleBadgePass();
+  schedulePass();
 });
 
 let scheduled = false;
-function scheduleBadgePass(): void {
+function schedulePass(): void {
   if (scheduled) return;
   scheduled = true;
   requestAnimationFrame(() => {
     scheduled = false;
     void badgePass();
+    bannerPass();
+    writeStats();
   });
 }
 
@@ -82,12 +87,69 @@ function applyBadge(row: Element, verdict: Verdict): void {
   container.prepend(badge);
 }
 
+// Gmail list views have a short hash (#inbox, #search/foo); an opened thread
+// appends a long id token. Used to gate the banner to the conversation view.
+function isMessageOpen(): boolean {
+  const parts = location.hash.replace(/^#/, "").split("/").filter(Boolean);
+  const last = parts[parts.length - 1] ?? "";
+  return parts.length >= 2 && /^[A-Za-z0-9_-]{12,}$/.test(last);
+}
+
+// Banner the opened tracked message. List rows carry data-legacy-LAST-message-id;
+// opened messages carry data-message-id / data-legacy-message-id, so those
+// selectors naturally target the conversation view, not the list.
+function bannerPass(): void {
+  if (!isMessageOpen()) return;
+  ensureBannerStyles();
+  const els = document.querySelectorAll("[data-message-id],[data-legacy-message-id]");
+  let candidates = 0;
+  let matched = 0;
+  for (const el of els) {
+    const raw =
+      el.getAttribute("data-legacy-message-id") ?? el.getAttribute("data-message-id") ?? "";
+    const hex = normalizeToHex(raw);
+    if (!hex) continue;
+    candidates++;
+    const v = mem.get(hex);
+    if (!v?.tracked) continue;
+    matched++;
+    if (el.getAttribute(BANNERED_ATTR) === "1" || el.querySelector(`.${BANNER_CLASS}`)) continue;
+    const banner = renderBanner(v);
+    if (!banner) continue;
+    el.setAttribute(BANNERED_ATTR, "1");
+    el.prepend(banner);
+  }
+  // Diagnostic for the first live run: if we're in an open view with message
+  // containers but none join a cached-tracked id, the id encoding/attribute
+  // differs from what we expect — log it so we can adjust.
+  if (candidates > 0 && matched === 0) {
+    console.debug(`[MSK] banner: open view, ${candidates} msg containers, 0 matched cached-tracked ids`);
+  }
+}
+
+// Publish view stats for the popup: how many currently-visible rows are tracked.
+let lastInView = -1;
+function writeStats(): void {
+  let inView = 0;
+  for (const row of document.querySelectorAll(`[${ROW_ID_ATTR}]`)) {
+    const id = row.getAttribute(ROW_ID_ATTR);
+    if (id && mem.get(id)?.tracked) inView++;
+  }
+  if (inView === lastInView) return;
+  lastInView = inView;
+  try {
+    void chrome.storage.local.set({ [STATS_KEY]: { inView, updatedAt: Date.now() } });
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 function start(): void {
-  new MutationObserver(() => scheduleBadgePass()).observe(document.documentElement, {
+  new MutationObserver(() => schedulePass()).observe(document.documentElement, {
     childList: true,
     subtree: true,
   });
-  scheduleBadgePass();
+  schedulePass();
 }
 
 if (document.body) start();
