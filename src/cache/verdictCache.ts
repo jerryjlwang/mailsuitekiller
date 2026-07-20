@@ -21,9 +21,13 @@ const PREFIX = "msk:v:";
 const key = (messageId: string) => PREFIX + messageId;
 
 function chromeStorage(): AsyncStorage {
+  // chrome.storage exists only in an extension context with the "storage"
+  // permission. If it's unavailable, degrade to a no-op instead of throwing —
+  // the in-memory badge path keeps working, and no unhandled rejection escapes.
+  const area = typeof chrome !== "undefined" ? chrome.storage?.local : undefined;
   return {
-    get: (keys) => chrome.storage.local.get(keys),
-    set: (items) => chrome.storage.local.set(items),
+    get: (keys) => (area ? area.get(keys) : Promise.resolve({})),
+    set: (items) => (area ? area.set(items) : Promise.resolve()),
   };
 }
 

@@ -62,4 +62,13 @@ describe("VerdictCache", () => {
     const cache = new VerdictCache(store);
     expect(await cache.get("19f69ab0cd0015df")).toEqual(tracked);
   });
+
+  it("degrades to a no-op (never throws) when chrome.storage is unavailable", async () => {
+    // No backend injected and no `chrome` global (as in this Node env): the
+    // default chrome.storage backend must not throw — regression guard for the
+    // 'Cannot read properties of undefined (reading local)' crash.
+    const cache = new VerdictCache();
+    await expect(cache.setMany([["19f69ab0cd0015df", tracked]])).resolves.toBeUndefined();
+    await expect(cache.get("19f69ab0cd0015df")).resolves.toBeNull();
+  });
 });
