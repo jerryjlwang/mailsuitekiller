@@ -7,8 +7,6 @@ import type { Verdict, Tracker } from "../engine";
 
 const STYLE_ID = "msk-badge-styles";
 export const BADGE_CLASS = "msk-badge";
-/** Marks a row container we've already badged, so passes stay idempotent. */
-export const BADGED_ATTR = "data-msk-badged";
 
 export function ensureBadgeStyles(): void {
   if (document.getElementById(STYLE_ID)) return;

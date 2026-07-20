@@ -7,8 +7,6 @@ import type { Verdict, Tracker } from "../engine";
 
 const STYLE_ID = "msk-banner-styles";
 export const BANNER_CLASS = "msk-banner";
-/** Marks a message container we've already bannered, to stay idempotent. */
-export const BANNERED_ATTR = "data-msk-bannered";
 
 export function ensureBannerStyles(): void {
   if (document.getElementById(STYLE_ID)) return;

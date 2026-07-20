@@ -8,8 +8,8 @@
 import { VerdictCache } from "../cache/verdictCache";
 import { detectFeed } from "./parseFeed";
 import type { Verdict } from "../engine";
-import { ensureBadgeStyles, renderBadge, BADGE_CLASS, BADGED_ATTR } from "../ui/badge";
-import { ensureBannerStyles, renderBanner, BANNER_CLASS, BANNERED_ATTR } from "../ui/banner";
+import { ensureBadgeStyles, renderBadge, BADGE_CLASS } from "../ui/badge";
+import { ensureBannerStyles, renderBanner, BANNER_CLASS } from "../ui/banner";
 import { normalizeToHex } from "./ids";
 
 const ROW_ID_ATTR = "data-legacy-last-message-id";
@@ -40,12 +40,15 @@ let scheduled = false;
 function schedulePass(): void {
   if (scheduled) return;
   scheduled = true;
-  requestAnimationFrame(() => {
+  const run = (): void => {
+    if (!scheduled) return; // whichever timer wins, the pass runs once
     scheduled = false;
     void badgePass();
     bannerPass();
     writeStats();
-  });
+  };
+  requestAnimationFrame(run); // paint-aligned in the common case
+  setTimeout(run, 250); // rAF is never serviced in a background tab
 }
 
 async function badgePass(): Promise<void> {
@@ -73,18 +76,29 @@ async function badgePass(): Promise<void> {
   }
 }
 
+// Gmail rewrites a row's contents whenever its state changes (read/unread,
+// hover, selection), which silently drops our span. Presence of the badge node
+// is therefore the only sound idempotency check — a marker attribute survives
+// the rewrite and would block re-badging, so the badge would vanish for good.
 function applyBadge(row: Element, verdict: Verdict): void {
   if (!verdict.tracked) return;
   const container = row.closest("tr") ?? row;
-  if (container.getAttribute(BADGED_ATTR) === "1" || container.querySelector(`.${BADGE_CLASS}`)) {
-    return; // idempotent
-  }
+  if (container.querySelector(`.${BADGE_CLASS}`)) return;
   const badge = renderBadge(verdict);
   if (!badge) return;
-  container.setAttribute(BADGED_ATTR, "1");
-  // First-pass placement: prepend into the row. Visual placement will be
-  // refined against live Gmail (see docs/SPIKE.md notes).
-  container.prepend(badge);
+  badgeHost(container).prepend(badge);
+}
+
+// div.y6 wraps the subject (span.bog) and snippet inside the subject cell.
+// Badging there keeps the pill inline with the subject; prepending to the <tr>
+// instead makes it an anonymous table cell ahead of the checkbox and shifts
+// every column right.
+function badgeHost(container: Element): Element {
+  return (
+    container.querySelector(".bog")?.parentElement ??
+    container.querySelector("td.a4W") ??
+    container
+  );
 }
 
 // Gmail list views have a short hash (#inbox, #search/foo); an opened thread
@@ -113,10 +127,9 @@ function bannerPass(): void {
     const v = mem.get(hex);
     if (!v?.tracked) continue;
     matched++;
-    if (el.getAttribute(BANNERED_ATTR) === "1" || el.querySelector(`.${BANNER_CLASS}`)) continue;
+    if (el.querySelector(`.${BANNER_CLASS}`)) continue; // same rewrite hazard as badges
     const banner = renderBanner(v);
     if (!banner) continue;
-    el.setAttribute(BANNERED_ATTR, "1");
     el.prepend(banner);
   }
   // Diagnostic for the first live run: if we're in an open view with message
